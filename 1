@@ -1,0 +1,145 @@
+#include <Ps3Controller.h>
+
+// Définir les broches de contrôle des moteurs
+#define LEFT_RPWM   26
+#define LEFT_LPWM   25
+#define LEFT_REN    14
+#define LEFT_LEN    27
+
+#define RIGHT_RPWM  5
+#define RIGHT_LPWM  18
+#define RIGHT_REN   16
+#define RIGHT_LEN   17
+
+int speedMultiplier = 255; // Vitesse par défaut
+bool isControllerConnected = false; // Suivi de l'état de connexion du contrôleur
+unsigned long lastReconnectAttempt = 0; // Suivi de la dernière tentative de reconnexion
+
+// Fonction de notification (optionnelle)
+void notify() {
+  // Vous pouvez ajouter des actions spécifiques ici si nécessaire
+}
+
+// Fonction appelée lors de la déconnexion
+void onDisconnect() {
+  Serial.println("Controller disconnected!");
+  isControllerConnected = false;
+  moveRobot(0, 0); // Arrêter le robot
+  Ps3.end();       // Terminer la connexion Bluetooth
+}
+
+// Mettre à jour la vitesse en fonction des boutons R1, R2, L1, L2
+void updateSpeed() {
+  if (Ps3.data.button.r1) {
+    speedMultiplier = 255; // Vitesse maximale
+  } else if (Ps3.data.button.r2) {
+    speedMultiplier = 63.75; // Vitesse rapide
+  } else if (Ps3.data.button.l1) {
+    speedMultiplier = 191.25; // Vitesse lente
+  } else if (Ps3.data.button.l2) {
+    speedMultiplier = 127.5; // Vitesse très lente
+  }
+}
+
+// Fonction pour déplacer le robot
+void moveRobot(int leftSpeed, int rightSpeed) {
+  leftSpeed = constrain(leftSpeed, -speedMultiplier, speedMultiplier);
+  rightSpeed = constrain(rightSpeed, -speedMultiplier, speedMultiplier);
+
+  // Contrôle des moteurs gauche
+  if (leftSpeed >= 0) {
+    analogWrite(LEFT_RPWM, leftSpeed);
+    analogWrite(LEFT_LPWM, 0);
+  } else {
+    analogWrite(LEFT_RPWM, 0);
+    analogWrite(LEFT_LPWM, abs(leftSpeed));
+  }
+
+  // Contrôle des moteurs droit
+  if (rightSpeed >= 0) {
+    analogWrite(RIGHT_RPWM, rightSpeed);
+    analogWrite(RIGHT_LPWM, 0);
+  } else {
+    analogWrite(RIGHT_RPWM, 0);
+    analogWrite(RIGHT_LPWM, abs(rightSpeed));
+  }
+
+  // Affichage si le robot est à l'arrêt
+  if (leftSpeed == 0 && rightSpeed == 0) {
+    Serial.println("STOP");
+  }
+}
+
+void onConnect() {
+  Serial.println("Connected.");
+  Ps3.setPlayer(1);
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(LEFT_REN, OUTPUT);
+  pinMode(LEFT_LEN, OUTPUT);
+  pinMode(RIGHT_REN, OUTPUT);
+  pinMode(RIGHT_LEN, OUTPUT);
+
+  digitalWrite(LEFT_REN, HIGH);
+  digitalWrite(LEFT_LEN, HIGH);
+  digitalWrite(RIGHT_REN, HIGH);
+  digitalWrite(RIGHT_LEN, HIGH);
+
+  Ps3.attach(notify);
+  Ps3.attachOnConnect(onConnect);
+  Ps3.begin("00:00:00:00:00:00"); // Remplacer par l'adresse Bluetooth de votre manette
+
+  Serial.print("Ready, Waiting for connection");
+}
+
+void loop() {
+  if (!Ps3.isConnected()) {
+    Serial.print(".");
+    delay(1000);
+    return;
+  }
+
+  if (!isControllerConnected) {
+    Serial.println("Controller connected and ready!");
+    isControllerConnected = true;
+  }
+
+  // 🔴 Arrêt d'urgence avec le bouton Cercle
+  if (Ps3.data.button.circle) {
+    Serial.println("Arrêt d'urgence !");
+    moveRobot(0, 0);  // Stop all motors
+    delay(500);       // Anti-rebond optionnel
+    return;
+  }
+
+  // Mise à jour de la vitesse
+  updateSpeed();
+
+  int leftMotorSpeed = 0;
+  int rightMotorSpeed = 0;
+
+  // Contrôle directionnel
+  if (Ps3.data.button.up) {
+    leftMotorSpeed = speedMultiplier;
+    rightMotorSpeed = speedMultiplier;
+    Serial.println("godam"); // Avancer
+  } else if (Ps3.data.button.down) {
+    leftMotorSpeed = -speedMultiplier;
+    rightMotorSpeed = -speedMultiplier;
+    Serial.println("ltali"); // Reculer
+  } else if (Ps3.data.button.right) {
+    leftMotorSpeed = speedMultiplier;
+    rightMotorSpeed = -speedMultiplier;
+    Serial.println("imin"); // Tourner à droite
+  } else if (Ps3.data.button.left) {
+    leftMotorSpeed = -speedMultiplier;
+    rightMotorSpeed = speedMultiplier;
+    Serial.println("isar"); // Tourner à gauche
+  }
+
+  // Appliquer les vitesses
+  moveRobot(leftMotorSpeed, rightMotorSpeed);
+}
